@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta charset="UTF-8" />
+<meta charset="UTF-8">
 <title>Nuke Simulator</title>
 <style>
     body { margin:0; background:#000; overflow:hidden; }
@@ -17,9 +17,9 @@
         z-index: 10;
     }
     select, button {
-        margin-top: 5px;
         width: 160px;
-        padding: 4px;
+        padding: 5px;
+        margin-top: 5px;
     }
 </style>
 </head>
@@ -27,159 +27,178 @@
 
 <div id="menu">
     <b>Тип бомбы:</b><br>
-    <select id="bombType">
-        <option value="50">Маленькая (50 kt)</option>
-        <option value="300">Средняя (300 kt)</option>
-        <option value="1000">Большая (1 Mt)</option>
-        <option value="50000">Царь-бомба (50 Mt)</option>
+    <select id="bomb">
+        <option value="50">50 kt (маленькая)</option>
+        <option value="300">300 kt (средняя)</option>
+        <option value="1000">1 Mt (большая)</option>
+        <option value="50000">50 Mt (Царь-бомба)</option>
     </select><br>
-    <button id="launchBtn">Запустить</button>
+    <button id="btn">Запустить</button>
 </div>
 
-<canvas id="canvas"></canvas>
+<canvas id="c"></canvas>
 
 <script>
-// ---------- CANVAS ----------
-const canvas = document.getElementById("canvas");
+const canvas = document.getElementById("c");
 const ctx = canvas.getContext("2d");
 canvas.width = innerWidth;
 canvas.height = innerHeight;
 
-// ----------- КАРТА МИРА (BASE64, гарантированно работает) ----------
-const mapImg = new Image();
-mapImg.src =
-"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAoAAAAHgCAYAAACp6..." 
-// ⚠ Я здесь обрезал base64. Я вставлю полный файл в следующем сообщении,
-// чтобы не превышать лимит. Сейчас — логика.
+// -------------------------
+// 1) ГЕНЕРАЦИЯ КАРТЫ
+// -------------------------
 
-// ----------- ДАННЫЕ ОБЪЕКТОВ -------------
-let buildings = [];
-let trees = [];
-let explosions = [];
+// Генерация простого силуэта мира
+function drawWorld() {
+    ctx.fillStyle = "#003366"; // океан
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-function randomBuildings() {
-    for (let i = 0; i < 200; i++) {
-        buildings.push({
-            x: Math.random() * canvas.width,
-            y: Math.random() * canvas.height,
-            size: 10 + Math.random() * 20,
-            destroyed: false
-        });
+    ctx.fillStyle = "#228B22"; // зелёная земля
+
+    // Простой континентальный шаблон (не супер точно, но выглядит как карта)
+    for (let i = 0; i < 8000; i++) {
+        let x = Math.random() * canvas.width;
+        let y = Math.random() * canvas.height;
+
+        // фильтры для "континентов"
+        if (
+            (x > canvas.width*0.05 && x < canvas.width*0.35 && y > canvas.height*0.2 && y < canvas.height*0.8) || 
+            (x > canvas.width*0.45 && x < canvas.width*0.75 && y > canvas.height*0.15 && y < canvas.height*0.85) ||
+            (x > canvas.width*0.80 && x < canvas.width*0.95 && y > canvas.height*0.25 && y < canvas.height*0.75)
+        ) {
+            ctx.fillRect(x, y, 3, 3);
+        }
     }
 }
 
-function randomTrees() {
+// -------------------------
+// 2) ОБЪЕКТЫ: ДОМА + ДЕРЕВЬЯ
+// -------------------------
+let buildings = [];
+let trees = [];
+
+function spawnObjects() {
+    buildings = [];
+    trees = [];
+
+    for (let i = 0; i < 250; i++) {
+        buildings.push({
+            x: Math.random() * canvas.width,
+            y: Math.random() * canvas.height,
+            s: 12 + Math.random()*10,
+            destroyed: false
+        });
+    }
+
     for (let i = 0; i < 300; i++) {
         trees.push({
             x: Math.random() * canvas.width,
             y: Math.random() * canvas.height,
-            size: 5 + Math.random() * 10,
+            r: 5 + Math.random()*5,
             burned: false
         });
     }
 }
 
-randomBuildings();
-randomTrees();
+drawWorld();
+spawnObjects();
 
-// ---------- ОБРАБОТКА КЛИКА ----------
-let targetX = null;
-let targetY = null;
+// -------------------------
+// 3) ВЗРЫВЫ
+// -------------------------
+let explosions = [];
+let target = {x:null, y:null};
 
 canvas.onclick = e => {
-    targetX = e.clientX;
-    targetY = e.clientY;
+    target.x = e.clientX;
+    target.y = e.clientY;
 };
 
-// ---------- ВЗРЫВ ----------
-function startExplosion(x, y, power) {
+document.getElementById("btn").onclick = () => {
+    if (target.x == null) return alert("Сначала нажми на карту!");
+    let p = Number(document.getElementById("bomb").value);
+
     explosions.push({
-        x, y,
-        radius: 0,
-        maxRadius: power * 4,
-        radiationRadius: power * 6
+        x: target.x,
+        y: target.y,
+        r: 0,
+        maxR: p * 3,
+        rad: p * 5
     });
-}
-
-document.getElementById("launchBtn").onclick = () => {
-    if (targetX === null) return alert("Сначала нажми на карту!");
-
-    const power = Number(document.getElementById("bombType").value);
-    startExplosion(targetX, targetY, power);
 };
 
-// ---------- ОБНОВЛЕНИЕ ----------
+// -------------------------
+// 4) ОБНОВЛЕНИЕ
+// -------------------------
 function update() {
-    // Взрывные волны
-    explosions.forEach(ex => {
-        if (ex.radius < ex.maxRadius) ex.radius += 3;
+
+    explosions.forEach(e => {
+        if (e.r < e.maxR) e.r += 2;
     });
 
-    // Разрушение домов
     buildings.forEach(b => {
         explosions.forEach(e => {
-            const d = Math.hypot(b.x - e.x, b.y - e.y);
-            if (d < e.radius) b.destroyed = true;
+            let d = Math.hypot(b.x - e.x, b.y - e.y);
+            if (d < e.r) b.destroyed = true;
         });
     });
 
-    // Сгорание деревьев
     trees.forEach(t => {
         explosions.forEach(e => {
-            const d = Math.hypot(t.x - e.x, t.y - e.y);
-            if (d < e.radiationRadius) t.burned = true;
+            let d = Math.hypot(t.x - e.x, t.y - e.y);
+            if (d < e.rad) t.burned = true;
         });
     });
 }
 
-// ---------- РЕНДЕР ----------
-function draw() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    // фон-карта
-    ctx.drawImage(mapImg, 0, 0, canvas.width, canvas.height);
-
-    // дома
+// -------------------------
+// 5) РЕНДЕР
+// -------------------------
+function drawObjects() {
+    // Дома
     buildings.forEach(b => {
-        ctx.fillStyle = b.destroyed ? "#441111" : "#666666";
-        ctx.fillRect(b.x, b.y, b.size, b.size);
+        ctx.fillStyle = b.destroyed ? "#552222" : "#BBBBBB";
+        ctx.fillRect(b.x, b.y, b.s, b.s);
     });
 
-    // деревья
+    // Деревья
     trees.forEach(t => {
-        ctx.fillStyle = t.burned ? "#332200" : "#008800";
+        ctx.fillStyle = t.burned ? "#331100" : "#009900";
         ctx.beginPath();
-        ctx.arc(t.x, t.y, t.size, 0, Math.PI * 2);
+        ctx.arc(t.x, t.y, t.r, 0, Math.PI*2);
         ctx.fill();
     });
 
-    // взрывы
+    // Взрывы
     explosions.forEach(e => {
-        // ударная волна
-        ctx.strokeStyle = "rgba(255,200,0,0.8)";
+        ctx.strokeStyle = "rgba(255,200,0,0.9)";
         ctx.lineWidth = 3;
         ctx.beginPath();
-        ctx.arc(e.x, e.y, e.radius, 0, Math.PI * 2);
+        ctx.arc(e.x, e.y, e.r, 0, Math.PI*2);
         ctx.stroke();
 
-        // радиация
         ctx.strokeStyle = "rgba(0,255,0,0.6)";
         ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.arc(e.x, e.y, e.radiationRadius, 0, Math.PI * 2);
+        ctx.arc(e.x, e.y, e.rad, 0, Math.PI*2);
         ctx.stroke();
     });
 }
 
+// -------------------------
+// 6) ГЛАВНЫЙ ЦИКЛ
+// -------------------------
 function loop() {
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+
+    drawWorld();
+    drawObjects();
     update();
-    draw();
+
     requestAnimationFrame(loop);
 }
 
-mapImg.onload = () => {
-    loop();
-};
+loop();
 </script>
 </body>
 </html>
